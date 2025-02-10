@@ -28,7 +28,7 @@ namespace AppLogin.Controllers
             return View(new RegistroUsuarioVM());
         }
 
-        [HttpPost]
+      
         public async Task<IActionResult> Registrarse(RegistroUsuarioVM model)
         {
             if (ModelState.IsValid)
@@ -65,7 +65,7 @@ namespace AppLogin.Controllers
             return View(model);
         }
 
-        [HttpPost]
+     
         public async Task<IActionResult> Login(LoginVM model)
         {
             if (ModelState.IsValid)

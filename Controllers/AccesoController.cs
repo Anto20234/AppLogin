@@ -6,6 +6,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
+using BCrypt.Net;
 
 namespace AppLogin.Controllers
 {
@@ -28,18 +29,20 @@ namespace AppLogin.Controllers
             return View(new RegistroUsuarioVM());
         }
 
-        [HttpPost]
+       
         public async Task<IActionResult> Registrarse(RegistroUsuarioVM model)
         {
             if (ModelState.IsValid)
             {
-                var usuarioExiste = await _context.Usuarios.AnyAsync(u => u.Correo == model.Correo);
+                // Verificar si el usuario ya existe
+                bool usuarioExiste = await _context.Usuarios.AnyAsync(u => u.Correo == model.Correo);
                 if (usuarioExiste)
                 {
                     ModelState.AddModelError("Correo", "Este correo ya está registrado");
                     return View(model);
                 }
 
+                // Obtener el rol por defecto
                 var rol = await _context.Roles.FirstOrDefaultAsync(r => r.IdRol == 1);
                 if (rol == null)
                 {
@@ -47,11 +50,15 @@ namespace AppLogin.Controllers
                     return View(model);
                 }
 
+                // Encriptar la contraseña antes de guardarla
+                string hashedPassword = BCrypt.Net.BCrypt.HashPassword(model.Clave);
+
+                // Crear el usuario
                 var usuario = new Usuario
                 {
                     NombreCompleto = model.NombreCompleto,
                     Correo = model.Correo,
-                    Clave = model.Clave,
+                    Clave = hashedPassword, // Guardamos la clave encriptada
                     IdRol = 1,
                     Rol = rol
                 };
@@ -65,16 +72,17 @@ namespace AppLogin.Controllers
             return View(model);
         }
 
-        [HttpPost]
+     
         public async Task<IActionResult> Login(LoginVM model)
         {
             if (ModelState.IsValid)
             {
+                // Buscar el usuario por correo
                 var usuario = await _context.Usuarios
                     .Include(u => u.Rol)
-                    .FirstOrDefaultAsync(u => u.Correo == model.Correo && u.Clave == model.Clave);
+                    .FirstOrDefaultAsync(u => u.Correo == model.Correo);
 
-                if (usuario != null)
+                if (usuario != null && BCrypt.Net.BCrypt.Verify(model.Clave, usuario.Clave))
                 {
                     var claims = new List<Claim>
                     {
@@ -86,6 +94,7 @@ namespace AppLogin.Controllers
                     var claimsIdentity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
                     await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(claimsIdentity));
 
+                    // Actualizar el último acceso del usuario
                     usuario.UltimoAcceso = DateTime.UtcNow;
                     await _context.SaveChangesAsync();
 
@@ -99,5 +108,12 @@ namespace AppLogin.Controllers
 
             return View(model);
         }
+
+        public async Task<IActionResult> Logout()
+        {
+            await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            return RedirectToAction("Login");
+        }
     }
 }
+
